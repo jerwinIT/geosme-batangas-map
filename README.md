@@ -8,7 +8,7 @@ years of operation, and financial technology usage — gathered through
 DTI-based fieldwork. The interactive map and analytics dashboards are a
 live reflection of that stored data: as researchers add or update SME
 records, the map, density visualizations, and charts update automatically.
-There's no separate manual step to keep the map "in sync" — the map *is*
+There's no separate manual step to keep the map "in sync" — the map _is_
 the data.
 
 🔗 **Live site:** [geosme-batangas.com](https://geosme-batangas.com)
@@ -43,16 +43,16 @@ the data.
 
 ## Tech stack
 
-| Layer | Tools |
-|---|---|
-| Framework | [Next.js](https://nextjs.org) (App Router, Server Actions) |
-| Language | TypeScript |
-| Database | PostgreSQL (via [Supabase](https://supabase.com)) |
-| ORM | [Prisma](https://www.prisma.io) with the `pg` driver adapter |
-| Mapping | [Leaflet](https://leafletjs.com) + [React Leaflet](https://react-leaflet.js.org) |
-| Charts | [Recharts](https://recharts.org) |
-| UI components | Tailwind CSS v4, shadcn-style components on [Base UI](https://base-ui.com) |
-| Icons | [Lucide](https://lucide.dev) |
+| Layer         | Tools                                                                            |
+| ------------- | -------------------------------------------------------------------------------- |
+| Framework     | [Next.js](https://nextjs.org) (App Router, Server Actions)                       |
+| Language      | TypeScript                                                                       |
+| Database      | PostgreSQL (via [Supabase](https://supabase.com))                                |
+| ORM           | [Prisma](https://www.prisma.io) with the `pg` driver adapter                     |
+| Mapping       | [Leaflet](https://leafletjs.com) + [React Leaflet](https://react-leaflet.js.org) |
+| Charts        | [Recharts](https://recharts.org)                                                 |
+| UI components | Tailwind CSS v4, shadcn-style components on [Base UI](https://base-ui.com)       |
+| Icons         | [Lucide](https://lucide.dev)                                                     |
 
 ---
 
