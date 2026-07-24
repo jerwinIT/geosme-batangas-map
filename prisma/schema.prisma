@@ -1,0 +1,852 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+
+}
+
+datasource db {
+  provider  = "postgresql"
+
+}
+
+
+// Municipality data for Batangas
+model Municipality {
+  id String @id @default(cuid())
+  name String @unique
+  code String @unique // Municipal code/identifier
+  type MunicipalityType @default(CITY) // City, Municipality, etc.
+  
+  // Geographic data
+  latitude Float?
+  longitude Float?
+  area Float? // Area in square kilometers
+  boundary  Json?    // <- GeoJSON (Polygon / MultiPolygon)
+  
+  // Administrative data
+  district String? // Congressional district
+  region String @default("CALABARZON")
+  province String @default("Batangas")
+  
+  // Business environment
+  isActive Boolean @default(true)
+  businessFriendly Boolean @default(true)
+  
+  // Relationships
+  businesses SME[]
+  users User[] // Users from this municipality
+  registrations SMERegistration[] // SME registrations for this municipality
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+  @@index([type])
+  @@index([district])
+  @@index([isActive])
+  @@index([latitude, longitude])
+
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String?
+  password String?
+  authProvider AuthProvider @default(geosme)
+  role Role @default(REGULAR_USER)
+
+  // Profile enhancements
+  avatar String?
+  phoneNumber String?
+
+  // Location for recommendations (Regular Users)
+  currentLatitude Float?
+  currentLongitude Float?
+  municipalityId String?
+  municipality Municipality? @relation(fields: [municipalityId], references: [id], onDelete: SetNull)
+
+  emailVerified DateTime? // Required by NextAuth
+  isSmeOwner Boolean @default(false) // For SME owners
+
+  // Password reset fields
+  resetToken String?
+  resetTokenExpiry DateTime?
+
+  // Login attempt tracking
+  failedLoginAttempts Int @default(0)
+  accountLockedUntil DateTime?
+  lastFailedLoginAttempt DateTime?
+
+  // Relationships
+  bookmarks Bookmark[]
+  businesses SME[] @relation("BusinessOwner")
+  reviews Review[]
+  reviewResponses ReviewResponse[] // SME Owner responses to reviews
+  helpfulVotes ReviewHelpfulVote[] // Track helpful votes given by user
+  reviewFlags ReviewFlag[] // Track review flags made by user
+  businessViews BusinessView[] // Track user business views
+  preferences UserPreferences?
+  analytics UserAnalytics?
+  SMERegistrations SMERegistration[]
+  reviewedRegistrations SMERegistration[] @relation("RegistrationReviewer")
+  smeNotifications SMENotification[] // SME-specific notifications
+  userNotifications UserNotification[] // User-specific notifications
+  // NextAuth.js relations
+  accounts Account[]
+  sessions Session[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Performance indexes for filtering
+  @@index([role])
+  @@index([emailVerified])
+  @@index([municipalityId])
+  @@index([name])
+  @@index([email])
+  @@index([createdAt])
+  @@index([role, emailVerified])
+  @@index([municipalityId, role])
+}
+
+model UserPreferences {
+  id String @id @default(cuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  preferredCategories String[] // Business categories user is interested in
+  searchRadius Int @default(10) // km radius for searches
+  notificationsEnabled Boolean @default(true)
+  emailNotifications Boolean @default(false)
+  mapTheme String @default("standard")
+  
+  // Notification type preferences (stores which notification types user wants to receive)
+  notificationTypePreferences Json? // JSON object: {"REVIEW_RESPONSE": true, "BOOKMARK": true, ...}
+
+  // Privacy settings
+  profileVisibility String @default("public") // "public" or "private"
+  useLocationForRecommendations Boolean @default(true) // Use GPS for personalized suggestions
+  showMunicipality Boolean @default(true) // Display municipality on profile
+  anonymousReviews Boolean @default(false) // Post reviews without showing name
+  showReviews Boolean @default(true) // Make reviews publicly visible
+  showBookmarks Boolean @default(false) // Make bookmarks publicly visible
+  allowBusinessContact Boolean @default(true) // Allow businesses to contact user
+  shareActivityData Boolean @default(false) // Share activity data for recommendations
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserAnalytics {
+  id String @id @default(cuid())
+  userId String @unique
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  totalSearches Int @default(0)
+  totalBookmarks Int @default(0)
+  totalReviews Int @default(0)
+  totalBusinessViews Int @default(0) // For engagement metrics
+  lastActiveAt DateTime @default(now())
+  mostSearchedCategories String[] // Track user interests
+  mostViewedMunicipalities String[] // Based on business views
+  frequentMunicipalities String[] // Based on search/bookmark history
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Bookmark {
+  id String @id @default(cuid())
+  userId String
+  businessId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business SME @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, businessId]) // Prevent duplicate bookmarks
+}
+
+// Fintech Technology Schema (Unified)
+
+model SME {
+  id String @id @default(cuid())
+  ownerId String? // Optional since admin uploads without user accounts initially
+
+  //Client fields requirement (from DTI)
+  name String // Business Name
+  yearsOfOperation YearsOfOperation? // Years of Operation
+  typeOfBusinessOrganization TypeOfBusinessOrganization? // Type of Business Organization
+  formsOfBusinessOrganization FormsOfBusinessOrganization? // Forms of Business Organization
+  numberOfEmployees NumberOfEmployees? // Number of Employees
+  averageMonthlyIncome AverageMonthlyIncome? // Average Monthly Income (in PHP)
+  assetSize AssetSize // Asset Size (Small, Medium) - Required
+  address String? // Business Address (optional)
+
+  
+  ownerName String? // Owner's Name (optional)
+  natureOfBusiness String? // Nature of Business (optional)
+  typeOfApplication String? // Type of Application (optional)
+  
+  // Price range (in PHP or your chosen currency)
+  minPrice Int?
+  maxPrice Int?
+
+  // Enhanced fields for app functionality
+  categoryId String? // Reference to BusinessCategory table
+  category BusinessCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  description String? // Optional detailed description
+
+  // Location data (to be populated via geocoding)
+  municipalityId String? // Reference to Municipality model
+  municipality Municipality? @relation(fields: [municipalityId], references: [id], onDelete: SetNull)
+  barangay String? // Extracted from address
+  latitude Float? // Geocoded from address
+  longitude Float? // Geocoded from address
+  distanceFromTownCenter Float? // For hotspot analysis
+  nearMajorRoad Boolean @default(false) // For accessibility analysis
+
+  // Contact and business details (optional enhancements)
+  contactNumber String?
+  website String?
+  socialMedia Json? // Facebook, Instagram links, etc.
+  businessHours String? // JSON string or structured format
+  email String?
+
+  // Media (can be added later)
+  serviceImages String[] // URLs 
+  coverImage String? // Main business image
+
+  // Business metrics
+  averageRating Float? @default(0)
+  totalReviews Int @default(0)
+  totalViews Int @default(0) // Track user engagement
+  totalBookmarks Int @default(0) // Track popularity
+  isActive Boolean @default(true)
+  verificationStatus VerificationStatus @default(PENDING) // Verified by admin
+  isClaimed Boolean @default(false) // If SME owner claimed this business
+  isFeaturedBusiness Boolean @default(false) // Featured on landing page (admin controlled)
+
+  // Admin management
+  uploadedBy String? // Admin who uploaded the data
+  dataSource String @default("ADMIN_UPLOAD") // Track data origin
+
+  // Relationships
+  owner User? @relation("BusinessOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  bookmarks Bookmark[]
+  reviews Review[]
+  reviewResponses ReviewResponse[]
+  businessViews BusinessView[] // Track individual views
+  registrations SMERegistration[]
+  notifications SMENotification[] // SME-specific notifications
+  userNotifications UserNotification[] // User notifications related to this SME
+  financialTechnologies SMEFinancialTechnology[] // Financial technologies used by this SME
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes for better performance
+  @@index([categoryId])
+  @@index([municipalityId])
+  @@index([latitude, longitude])
+  @@index([isActive])
+  @@index([isClaimed])
+  @@index([totalViews])
+  @@index([totalBookmarks])
+  @@index([natureOfBusiness])
+  // Search performance indexes
+  @@index([name])
+  @@index([ownerName])
+  @@index([address])
+  // Filter performance indexes
+  @@index([verificationStatus])
+  @@index([assetSize])
+  @@index([createdAt])
+  // ENUM field indexes for filtering and visualization
+  @@index([yearsOfOperation])
+  @@index([typeOfBusinessOrganization])
+  @@index([formsOfBusinessOrganization])
+  @@index([numberOfEmployees])
+  @@index([averageMonthlyIncome])
+  // Composite indexes for common query patterns
+  @@index([verificationStatus, createdAt])
+  @@index([municipalityId, verificationStatus])
+  @@index([municipalityId, assetSize])
+  @@index([categoryId, municipalityId])
+  @@index([assetSize, verificationStatus])
+  // Composite indexes for visualization queries
+  @@index([yearsOfOperation, numberOfEmployees])
+  @@index([typeOfBusinessOrganization, formsOfBusinessOrganization])
+  @@index([averageMonthlyIncome, municipalityId])
+}
+
+
+// New Fintech Model: Unified as one.
+// Financial Technology model
+model FinancialTechnology {
+  id String @id @default(cuid())
+  name String @unique // e.g., "Digital Wallet", "E-Banking", "ATM", "EFT"
+  slug String @unique // e.g., "digital-wallet", "e-banking"
+  description String? // Optional description
+  
+  // Density colors for map visualization
+  densityColor String? @db.Text // Hex color for map density visualization
+  
+  // Display settings
+  displayOrder Int @default(0) // Order in lists
+  isActive Boolean @default(true) // Allow disabling technologies
+  
+  // Relationships
+  smes SMEFinancialTechnology[] // SMEs using this financial technology
+  
+  createdBy String? // Admin who created this
+  
+  // Add these missing fields:
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([isActive])
+  @@index([displayOrder])
+  @@index([slug])
+}
+
+// Join table for SME and Financial Technologies
+model SMEFinancialTechnology {
+  id String @id @default(cuid())
+  smeId String
+  financialTechnologyId String
+  
+  // Flags
+  isActive Boolean @default(true) // Is this technology currently active for this SME
+
+  sme SME @relation(fields: [smeId], references: [id], onDelete: Cascade)
+  financialTechnology FinancialTechnology @relation(fields: [financialTechnologyId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([smeId, financialTechnologyId])
+  @@index([smeId])
+  @@index([financialTechnologyId])
+  @@index([isActive])
+}
+
+// End Fintech Technology Schema (Unified)
+
+
+model Review {
+  id String @id @default(cuid())
+  userId String
+  businessId String
+
+  rating Int // 1-5 stars
+  comment String?
+  images String[] // Optional review images
+
+  // Moderation
+  isApproved Boolean @default(true)
+  isFlagged Boolean @default(false)
+  isHidden Boolean @default(false) // Auto-hidden when both admin and SME flag
+  flaggedByAdmin Boolean @default(false)
+  flaggedBySME Boolean @default(false)
+  adminFlagReason String?
+  smeFlagReason String?
+  flaggedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business SME @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  response ReviewResponse? // SME Owner can respond
+  helpfulVotes ReviewHelpfulVote[] // Track helpful votes
+  flags ReviewFlag[] // Track individual flag instances
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, businessId]) // One review per user per business
+  @@index([businessId])
+  @@index([rating])
+  @@index([isFlagged])
+  @@index([isHidden])
+}
+
+// Track individual review flags
+model ReviewFlag {
+  id String @id @default(cuid())
+  reviewId String
+  flaggedBy String // User ID who flagged
+  flaggerRole String // "ADMIN" or "SME_OWNER"
+  reason String
+  createdAt DateTime @default(now())
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [flaggedBy], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@index([flaggedBy])
+}
+
+// Track helpful votes for reviews
+model ReviewHelpfulVote {
+  id String @id @default(cuid())
+  reviewId String
+  userId String
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, userId]) // Prevent duplicate votes
+  @@index([reviewId])
+  @@index([userId])
+}
+
+// SME Owners can respond to reviews
+model ReviewResponse {
+  id String @id @default(cuid())
+  reviewId String @unique
+  userId String // SME Owner who responded
+  businessId String
+
+  response String
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business SME @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessId])
+}
+
+// Track individual business views for engagement metrics
+model BusinessView {
+  id String @id @default(cuid())
+  businessId String
+  userId String? // Nullable for anonymous views
+  ipAddress String? // For anonymous tracking
+
+  business SME @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  viewedAt DateTime @default(now())
+
+  @@index([businessId])
+  @@index([viewedAt])
+}
+
+
+
+
+model SMERegistration {
+  id String @id @default(cuid())
+  userId String // User who submitted the registration
+  smeId String? // If claiming existing SME
+  
+  // Registration type
+  registrationType RegistrationType // CLAIM_EXISTING or REGISTER_NEW
+  
+  // Business information
+  businessName String
+  businessAddress String?
+  ownerName String
+  ownerEmail String
+  ownerPhone String
+  businessCategoryId String?
+  businessCategory BusinessCategory? @relation(fields: [businessCategoryId], references: [id], onDelete: SetNull)
+  municipalityId String?
+  municipality Municipality? @relation(fields: [municipalityId], references: [id], onDelete: SetNull)
+  assetSize AssetSize
+  latitude Float? 
+  longitude Float?
+  
+  // DTI fields
+  yearsOfOperation YearsOfOperation?
+  typeOfBusinessOrganization TypeOfBusinessOrganization?
+  formsOfBusinessOrganization FormsOfBusinessOrganization?
+  numberOfEmployees NumberOfEmployees?
+  averageMonthlyIncome AverageMonthlyIncome?
+
+  // Document uploads
+  businessLicense String? // URL to uploaded document
+  dtiRegistration String? // URL to uploaded document
+  barangayClearance String? // URL to uploaded document
+  mayorPermit String? // URL to uploaded document
+  otherDocuments String[] // Array of additional document URLs
+  
+  // Status tracking
+  status RegistrationStatus @default(PENDING)
+  adminNotes String?
+  reviewedBy String? // Admin who reviewed
+  reviewedAt DateTime?
+  
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sme SME? @relation(fields: [smeId], references: [id], onDelete: SetNull)
+  reviewer User? @relation("RegistrationReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([status])
+  @@index([registrationType])
+  @@index([userId])
+}
+
+enum RegistrationType {
+  CLAIM_EXISTING
+  REGISTER_NEW
+}
+
+enum RegistrationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  REQUIRES_DOCUMENTS
+}
+
+
+enum Role {
+  REGULAR_USER
+  SME_OWNER
+  ADMIN
+}
+
+enum AuthProvider {
+  google
+  geosme
+}
+
+enum AssetSize {
+  SMALL
+  MEDIUM
+}
+
+// Business Category table for dynamic category management
+model BusinessCategory {
+  id String @id @default(cuid())
+  name String @unique // e.g., "Restaurant", "Retail", "Agriculture"
+  slug String @unique // e.g., "restaurant", "retail", "agriculture"
+  description String? // Optional description of the category
+  icon String? // Icon identifier or URL
+  color String? // Hex color for UI display
+  
+  // Category metadata
+  isActive Boolean @default(true) // Allow disabling categories
+  displayOrder Int @default(0) // Order for display in lists
+  parentId String? // For subcategories (self-referencing)
+  parent BusinessCategory? @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children BusinessCategory[] @relation("CategoryHierarchy")
+  
+  // Relationships
+  smes SME[] // SMEs in this category
+  registrations SMERegistration[] // Registration requests for this category
+
+  
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String? // Admin who created this category
+  
+  @@index([isActive])
+  @@index([displayOrder])
+  @@index([slug])
+  @@index([parentId])
+}
+
+enum MunicipalityType {
+  CITY
+  MUNICIPALITY
+  COMPONENT_CITY
+  INDEPENDENT_COMPONENT_CITY
+  HIGHLY_URBANIZED_CITY
+}
+
+// NextAuth.js required tables
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED // (optional, useful for rejected cases)
+}
+
+enum YearsOfOperation {
+  ONE_TO_FIVE
+  SIX_TO_TEN
+  ELEVEN_TO_FIFTEEN
+  SIXTEEN_TO_TWENTY
+  MORE_THAN_TWENTY
+}
+
+enum TypeOfBusinessOrganization {
+  CORPORATION
+  SOLE_PROPRIETORSHIP
+  PARTNERSHIP
+  COOPERATIVES
+}
+
+enum FormsOfBusinessOrganization {
+  MERCHANDISING
+  SERVICE
+  HYBRID
+  MANUFACTURING
+}
+
+enum NumberOfEmployees {
+  ONE_TO_FIFTY
+  FIFTY_ONE_TO_HUNDRED
+  ONE_HUNDRED_TO_ONE_FIFTY
+  ONE_FIFTY_TO_TWO_HUNDRED
+  MORE_THAN_TWO_HUNDRED
+}
+
+enum AverageMonthlyIncome {
+  BELOW_P50_000
+  P50_001_TO_P100_000
+  P100_001_TO_P150_000
+  P150_001_TO_P200_000
+  MORE_THAN_P200_000
+}
+
+// Notification system models
+model Notification {
+  id String @id @default(cuid())
+  title String
+  message String
+  type NotificationType @default(INFO)
+  priority NotificationPriority @default(MEDIUM)
+  status NotificationStatus @default(DRAFT)
+  
+  // Recipients and delivery
+  recipients String // Comma-separated email addresses
+  emailSent Boolean @default(false)
+  sentAt DateTime?
+  
+  // Metadata
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model NotificationTemplate {
+  id String @id @default(cuid())
+  name String
+  subject String
+  content String
+  type String @default("general")
+  variables String // Comma-separated variable names
+  
+  // Metadata
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([type])
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationStatus {
+  DRAFT
+  SENT
+  FAILED
+}
+
+// SME-specific notification system
+model SMENotification {
+  id String @id @default(cuid())
+  smeId String // The SME this notification is for
+  userId String // The SME owner who receives this notification
+  
+  // Notification content
+  title String
+  message String
+  type SMENotificationType @default(INFO)
+  priority SMENotificationPriority @default(MEDIUM)
+  
+  // Related data
+  relatedEntityType String? // "BOOKMARK", "REVIEW", "REGISTRATION", etc.
+  relatedEntityId String? // ID of the related entity (bookmark, review, etc.)
+  
+  // Status and metadata
+  isRead Boolean @default(false)
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relationships
+  sme SME @relation(fields: [smeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([smeId])
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([type])
+}
+
+enum SMENotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  BOOKMARK
+  REVIEW
+  REGISTRATION
+  PERFORMANCE
+}
+
+enum SMENotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// User-specific notification system for regular users
+model UserNotification {
+  id String @id @default(cuid())
+  userId String // The regular user who receives this notification
+  
+  // Notification content
+  title String
+  message String
+  type UserNotificationType @default(INFO)
+  priority UserNotificationPriority @default(MEDIUM)
+  
+  // Related data
+  relatedEntityType String? // "REVIEW_RESPONSE", "FLAG", "VERIFICATION", "BOOKMARK", etc.
+  relatedEntityId String? // ID of the related entity (review, flag, etc.)
+  relatedSMEId String? // ID of the related SME if applicable
+  
+  // Status and metadata
+  isRead Boolean @default(false)
+  readAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relationships
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  relatedSME SME? @relation(fields: [relatedSMEId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([type])
+  @@index([relatedSMEId])
+}
+
+enum UserNotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+  REVIEW_RESPONSE // SME owner replied to user's review
+  FLAG // User was flagged by admin or SME owner
+  VERIFICATION // User verification status update
+  BOOKMARK // Bookmark-related notifications
+  SYSTEM // System-wide notifications
+}
+
+enum UserNotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// System settings for admin configuration
+model SystemSettings {
+  id String @id @default(cuid())
+  
+  // General settings
+  appName String @default("GeoSME Batangas")
+  maintenanceMode Boolean @default(false)
+  allowNewRegistrations Boolean @default(true)
+  autoApproveBusinesses Boolean @default(false)
+  
+  // Business settings
+  requireApprovalForChanges Boolean @default(true)
+  maxFileUploadSize Int @default(5) // in MB
+  allowBusinessClaims Boolean @default(true)
+  
+  // Notification settings
+  emailNotifications Boolean @default(true)
+  smeRegistrationAlerts Boolean @default(true)
+  reviewAlerts Boolean @default(true)
+  systemAlerts Boolean @default(true)
+  
+  // Security settings
+  sessionTimeout Int @default(30) // in minutes
+  maxLoginAttempts Int @default(5)
+  requireStrongPasswords Boolean @default(true)
+  
+  // Map settings
+  mapDensityColors String? @db.Text // JSON string for density color configuration
+  
+  // Metadata
+  updatedBy String? // Admin who last updated
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@index([updatedAt])
+}
